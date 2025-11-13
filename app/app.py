@@ -31,7 +31,7 @@ async def upload_file(
 ):
     temp_file_path = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splittext(file.filename)[1]) as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
             temp_file_path = temp_file.name
             shutil.copyfileobj(file.file, temp_file)
         
@@ -45,12 +45,12 @@ async def upload_file(
             )
         )
 
-        if upload_result.response.http_status_code == 200:            
+        if upload_result.response_metadata.http_status_code == 200:            
             post = Post(
-                caption=caption,
-                url="dummy url",
-                file_type="photo",
-                file_name="dummy name"
+                caption = caption,
+                url= upload_result.url,
+                file_type="video" if file.content_type.startswith("video/") else "image",
+                file_name=upload_result.name
             )
             session.add(post)
             await session.commit()
@@ -65,12 +65,6 @@ async def upload_file(
             os.unlink(temp_file_path)
         file.file.close()
 
-
-
-    session.add(post)
-    await session.commit()
-    await session.refresh(post)
-    return post 
 
 #Feed
 @app.get("/feed")
@@ -93,12 +87,30 @@ async def get_feed(
                 "caption":post.caption,
                 "url":post.url,
                 "file_type":post.file_type,
-                "file_name":post.created_at.isoformat(),
-                "created_ad":post.created_at.isoformat()
+                "file_name":post.file_name,
+                "created_at":post.created_at.isoformat()
             }
         )
     return {"posts": posts_data}
     
+
+#DELETE 
+@app.delete("/posts/{post_id}")
+async def delete_post(post_id:str, session: AsyncSession = Depends(get_async_session)):
+    try:
+        post_uuid = uuid.UUID(post_id)
+
+        result = await session.execute(select(Post).where(Post.id == post_uuid))
+        post = result.scalars().first()
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        
+        await session.delete(post)
+        await session.commit()
+
+        return {"success":  True, "message": "Post deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code = 500, detail = str(e))
 
 # # #Hello World
 # # @app.get("/hello-world")
